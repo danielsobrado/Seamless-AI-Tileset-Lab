@@ -1,0 +1,4 @@
+.vite/
+.history/
+node_modules/
+dist/
