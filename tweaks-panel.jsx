@@ -206,6 +206,7 @@ function TweaksPanel({ title = 'Tweaks', children }) {
   };
 
   const onDragStart = (e) => {
+    if (e.button !== 0) return;
     const panel = dragRef.current;
     if (!panel) return;
     const r = panel.getBoundingClientRect();

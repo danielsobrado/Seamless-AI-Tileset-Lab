@@ -33,7 +33,6 @@ const NODE_TYPES = {
     icon: 'Wrench',
     short: 'CL',
     description: 'Crop the AI grid, normalize tile size, resample to a clean atlas.',
-    script: 'texture_tools/clean_tileset_sheet.py',
     inputs: [{ id: 'atlas', label: 'raw atlas', kind: 'image', required: true }],
     outputs: [
       { id: 'atlas', label: 'cleaned 128px atlas', kind: 'image' },
@@ -79,7 +78,6 @@ const NODE_TYPES = {
     icon: 'Chart',
     short: 'SR',
     description: 'Score self-repeat or best-neighbor adjacency for each tile.',
-    script: 'texture_tools/tile_adjacency_report.py',
     inputs: [
       { id: 'atlas', label: 'cleaned atlas', kind: 'image', required: true },
       { id: 'classmap', label: 'class map', kind: 'json' },
@@ -114,7 +112,6 @@ const NODE_TYPES = {
     icon: 'Wrench',
     short: 'RP',
     description: 'Repair only base terrain tiles for self-repeat. Never apply to props or transitions.',
-    script: 'texture_tools/repair_base_tiles.py',
     inputs: [
       { id: 'atlas', label: 'cleaned atlas', kind: 'image', required: true },
       { id: 'classmap', label: 'class map', kind: 'json' },
@@ -155,7 +152,6 @@ const NODE_TYPES = {
     icon: 'Eye',
     short: 'PV',
     description: 'Visual QA: stamp tiles into a random or single-tile map for repetition inspection.',
-    script: 'texture_tools/tile_preview.py',
     inputs: [{ id: 'atlas', label: 'atlas', kind: 'image', required: true }],
     outputs: [{ id: 'png', label: 'preview PNG', kind: 'image' }],
     defaults: {
@@ -184,7 +180,6 @@ const NODE_TYPES = {
     icon: 'Shuffle',
     short: 'TR',
     description: 'Generate semantic transition tiles (edges, corners, island) from two repaired base tiles.',
-    script: 'texture_tools/generate_transitions.py',
     inputs: [
       { id: 'atlas_a', label: 'atlas A', kind: 'image', required: true },
       { id: 'atlas_b', label: 'atlas B', kind: 'image', required: true },
@@ -261,15 +256,12 @@ const NODE_TYPES = {
     icon: 'Sheet',
     short: 'CS',
     description: 'Lay out a folder of tile PNGs into a single contact-sheet image.',
-    script: 'texture_tools/tile_contact_sheet.py',
     inputs: [{ id: 'tiles', label: 'tile folder', kind: 'folder', required: true }],
     outputs: [{ id: 'png', label: 'contact sheet PNG', kind: 'image' }],
-    defaults: { input_dir: './out/transitions/grass_to_dirt', columns: 9, spacing: 1, pattern: '*.png' },
+    defaults: { columns: 9, spacing: 1 },
     paramSchema: [
-      { key: 'input_dir', label: 'Input dir', kind: 'text' },
       { key: 'columns', label: 'Columns', kind: 'number', min: 1, max: 32 },
       { key: 'spacing', label: 'Spacing', kind: 'number', min: 0, max: 16, suffix: 'px' },
-      { key: 'pattern', label: 'Pattern', kind: 'text' },
     ],
     warnings: () => [{ level: 'info', message: 'Contact sheets press unrelated tiles edge-to-edge — they can visually exaggerate seams that aren’t real in-engine.' }],
   },
@@ -280,7 +272,6 @@ const NODE_TYPES = {
     icon: 'Frame',
     short: 'EX',
     description: 'Add 2–4 px extruded padding so Godot/Tiled/browsers don’t bleed across tile edges.',
-    script: 'texture_tools/extrude_tileset.py',
     inputs: [{ id: 'atlas', label: 'repaired atlas', kind: 'image', required: true }],
     outputs: [{ id: 'atlas', label: 'padded atlas', kind: 'image' }, { id: 'meta', label: 'tiled/godot meta', kind: 'json' }],
     defaults: { tile_size: 128, padding: 2 },
@@ -327,18 +318,18 @@ const COL_X = [80, 380, 680, 980, 1280, 1580, 1880];
 const ROW_Y = [120, 380, 640];
 
 const INITIAL_NODES = [
-  { id: 'n_raw', type: 'raw_input', x: COL_X[0], y: ROW_Y[0], status: 'idle', params: {}, runs: 1 },
-  { id: 'n_clean', type: 'clean', x: COL_X[1], y: ROW_Y[0], status: 'success', params: {}, runs: 3 },
-  { id: 'n_classify', type: 'classify', x: COL_X[2], y: ROW_Y[0], status: 'success', params: {}, runs: 1 },
-  { id: 'n_seam', type: 'seam_report', x: COL_X[3], y: ROW_Y[0] - 90, status: 'success', params: {}, runs: 2 },
-  { id: 'n_repair', type: 'repair', x: COL_X[3], y: ROW_Y[0] + 90, status: 'success', params: {}, runs: 4 },
-  { id: 'n_preview', type: 'preview', x: COL_X[4], y: ROW_Y[0] - 90, status: 'success', params: {}, runs: 2 },
-  { id: 'n_transitions_C', type: 'transitions', x: COL_X[4], y: ROW_Y[0] + 90, status: 'success', params: { preset: 'C_stochastic' }, runs: 6, label: 'preset C — stochastic' },
+  { id: 'n_raw', type: 'raw_input', x: COL_X[0], y: ROW_Y[0], status: 'idle', params: {}, runs: 0 },
+  { id: 'n_clean', type: 'clean', x: COL_X[1], y: ROW_Y[0], status: 'idle', params: {}, runs: 0 },
+  { id: 'n_classify', type: 'classify', x: COL_X[2], y: ROW_Y[0], status: 'idle', params: {}, runs: 0 },
+  { id: 'n_seam', type: 'seam_report', x: COL_X[3], y: ROW_Y[0] - 90, status: 'idle', params: {}, runs: 0 },
+  { id: 'n_repair', type: 'repair', x: COL_X[3], y: ROW_Y[0] + 90, status: 'idle', params: {}, runs: 0 },
+  { id: 'n_preview', type: 'preview', x: COL_X[4], y: ROW_Y[0] - 90, status: 'idle', params: {}, runs: 0 },
+  { id: 'n_transitions_C', type: 'transitions', x: COL_X[4], y: ROW_Y[0] + 90, status: 'idle', params: { preset: 'C_stochastic' }, runs: 0, label: 'preset C — stochastic' },
   // Branch: preset G
-  { id: 'n_transitions_G', type: 'transitions', x: COL_X[4], y: ROW_Y[1] + 60, status: 'success', params: { preset: 'G_soft_detail', blend_width: 10, dither: 48, grain_size: 6, band_darken: 0.03, band_desaturate: 0.02, highlight_clamp: 170, detail_overlay: true, detail_count: 90, detail_min_size: 1, detail_max_size: 5, detail_opacity: 0.7, palette_snap: 'band', palette_colors: 128, palette_max_luma: 175, seed: 49 }, runs: 3, label: 'preset G — soft detail' },
-  { id: 'n_contact', type: 'contact_sheet', x: COL_X[5], y: ROW_Y[0] + 90, status: 'success', params: {}, runs: 1 },
+  { id: 'n_transitions_G', type: 'transitions', x: COL_X[4], y: ROW_Y[1] + 60, status: 'idle', params: { preset: 'G_soft_detail', blend_width: 10, dither: 48, grain_size: 6, band_darken: 0.03, band_desaturate: 0.02, highlight_clamp: 170, detail_overlay: true, detail_count: 90, detail_min_size: 1, detail_max_size: 5, detail_opacity: 0.7, palette_snap: 'band', palette_colors: 128, palette_max_luma: 175, seed: 49 }, runs: 0, label: 'preset G — soft detail' },
+  { id: 'n_contact', type: 'contact_sheet', x: COL_X[5], y: ROW_Y[0] + 90, status: 'idle', params: {}, runs: 0 },
   { id: 'n_extrude', type: 'extrude', x: COL_X[5], y: ROW_Y[0] - 90, status: 'idle', params: {}, runs: 0 },
-  { id: 'n_dashboard', type: 'dashboard', x: COL_X[6], y: ROW_Y[1] - 80, status: 'success', params: {}, runs: 1 },
+  { id: 'n_dashboard', type: 'dashboard', x: COL_X[6], y: ROW_Y[1] - 80, status: 'idle', params: {}, runs: 0 },
 ];
 
 const INITIAL_EDGES = [
@@ -361,75 +352,10 @@ const INITIAL_EDGES = [
 ];
 
 // Run history (experiment log)
-const INITIAL_HISTORY = [
-  { id: 'r1', node: 'n_clean', label: 'clean rows=8 cols=8 nearest', when: 'today 14:02', duration: '0.8s', status: 'ok', score: null },
-  { id: 'r2', node: 'n_seam', label: 'seam self-repeat ew=4', when: 'today 14:04', duration: '1.2s', status: 'ok', score: 12.4 },
-  { id: 'r3', node: 'n_seam', label: 'seam self-repeat ew=8', when: 'today 14:06', duration: '1.3s', status: 'ok', score: 8.1 },
-  { id: 'r4', node: 'n_repair', label: 'repair s=0.5', when: 'today 14:09', duration: '2.1s', status: 'ok', score: 6.4 },
-  { id: 'r5', node: 'n_repair', label: 'repair s=0.65 ★', when: 'today 14:12', duration: '2.0s', status: 'ok', score: 4.2, favorite: true },
-  { id: 'r6', node: 'n_transitions_C', label: 'preset C stochastic', when: 'today 14:18', duration: '3.4s', status: 'ok', score: null },
-  { id: 'r7', node: 'n_transitions_G', label: 'preset G soft detail ★', when: 'today 14:24', duration: '4.1s', status: 'ok', score: null, favorite: true },
-];
+const INITIAL_HISTORY = [];
 
-// Sample seam report rows (used in inspector + dashboard)
-const SEAM_ROWS = [
-  { tile: 1, cls: 'grass_base', l_r: 3.2, t_b: 2.8, worst: 3.2, side: 4.1, verdict: 'yes' },
-  { tile: 2, cls: 'grass_base', l_r: 4.6, t_b: 5.1, worst: 5.1, side: 5.4, verdict: 'yes' },
-  { tile: 3, cls: 'grass_base', l_r: 11.4, t_b: 6.2, worst: 11.4, side: 9.1, verdict: 'maybe' },
-  { tile: 4, cls: 'grass_base', l_r: 8.8, t_b: 7.4, worst: 8.8, side: 8.2, verdict: 'maybe' },
-  { tile: 5, cls: 'grass_base', l_r: 4.1, t_b: 4.7, worst: 4.7, side: 4.5, verdict: 'yes' },
-  { tile: 6, cls: 'grass_base', l_r: 18.6, t_b: 22.4, worst: 22.4, side: 20.8, verdict: 'no' },
-  { tile: 7, cls: 'grass_base', l_r: 13.2, t_b: 11.7, worst: 13.2, side: 12.6, verdict: 'maybe' },
-  { tile: 8, cls: 'grass_base', l_r: 3.7, t_b: 3.4, worst: 3.7, side: 3.8, verdict: 'yes' },
-  { tile: 32, cls: 'dirt_base', l_r: 6.9, t_b: 5.8, worst: 6.9, side: 6.2, verdict: 'yes' },
-  { tile: 49, cls: 'props', l_r: 41.2, t_b: 38.6, worst: 41.2, side: 40.4, verdict: 'no (expected — prop)' },
-];
-
-// Sample logs streamed by Run
-const SAMPLE_LOGS = {
-  clean: [
-    '$ python texture_tools/clean_tileset_sheet.py --rows 8 --cols 8 --tile_size 128 --resample nearest',
-    '[clean] reading raw atlas: sd-grass-v3.png (1024x1024)',
-    '[clean] grid crop → 8×8 of 128px',
-    '[clean] resample: nearest-neighbor',
-    '[clean] wrote out/clean/sd-grass-v3.clean.png (1024x1024, 64 tiles)',
-    '[clean] done in 0.81s',
-  ],
-  seam_report: [
-    '$ python texture_tools/tile_adjacency_report.py --mode self-repeat --edge_width 8',
-    '[seam] scanning 64 tiles, edge_width=8',
-    '[seam] same_class_only=true, only_classes=grass_base,dirt_base',
-    '[seam] computed 9 self-repeat scores',
-    '[seam] median worst-diff: 5.4',
-    '[seam] wrote out/reports/seam_self.csv',
-    '[seam] wrote out/reports/seam_self.md',
-    '[seam] done in 1.31s',
-  ],
-  repair: [
-    '$ python texture_tools/repair_base_tiles.py --strength 0.65 --edge_width 8',
-    '[repair] only_classes: grass_base, dirt_base',
-    '[repair] tile_ids: 1-8,9-14,16,32 → 16 tiles',
-    '[repair] before mean worst: 9.8',
-    '[repair] applying edge-blend, strength=0.65',
-    '[repair] after mean worst: 4.2 (-57%)',
-    '[repair] wrote out/repaired/sd-grass-v3.repaired.png',
-    '[repair] done in 2.04s',
-  ],
-  transitions: [
-    '$ python texture_tools/generate_transitions.py --preset G_soft_detail --seed 49',
-    '[trans] reading atlas A: tile 8 (grass)',
-    '[trans] reading atlas B: tile 32 (dirt)',
-    '[trans] generating 9 semantic tile types × 3 variants = 27',
-    '[trans] blend_mode=stochastic, grain_size=6',
-    '[trans] palette_snap=band, palette_colors=128',
-    '[trans] detail_overlay: 90 marks, b-into-a',
-    '[trans] wrote out/transitions/grass_to_dirt/ (27 PNGs)',
-    '[trans] wrote transition_manifest.yaml',
-    '[trans] done in 4.12s',
-  ],
-};
 
 Object.assign(window, {
   NODE_TYPES, COLOR_TOKENS, INITIAL_NODES, INITIAL_EDGES,
-  INITIAL_HISTORY, SEAM_ROWS, SAMPLE_LOGS,
+  INITIAL_HISTORY,
 });

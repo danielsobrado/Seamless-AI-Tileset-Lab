@@ -39,13 +39,36 @@ const TextInput = ({ value, onChange, placeholder, suffix }) => (
   </div>
 );
 
-const NumInput = ({ value, onChange, min, max, step, suffix }) => (
-  <TextInput
-    value={value}
-    onChange={(v) => onChange(v === '' ? '' : Number(v))}
-    suffix={suffix}
-  />
-);
+const NumInput = ({ value, onChange, min, max, step = 1, suffix }) => {
+  const coerce = (raw) => {
+    if (raw === '') {
+      onChange('');
+      return;
+    }
+    let next = Number(raw);
+    if (!Number.isFinite(next)) return;
+    if (min != null && next < min) next = min;
+    if (max != null && next > max) next = max;
+    onChange(next);
+  };
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type="number" value={value ?? ''} min={min} max={max} step={step}
+        onChange={e => coerce(e.target.value)}
+        style={{
+          width: '100%', height: 30, padding: suffix ? '0 30px 0 9px' : '0 9px',
+          background: '#fff', border: '1px solid var(--border-strong)',
+          borderRadius: 6, fontSize: 12, color: 'var(--ink)',
+          fontFamily: 'inherit', outline: 'none',
+        }}
+        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+        onBlur={e => e.target.style.borderColor = 'var(--border-strong)'}
+      />
+      {suffix && <span style={{ position: 'absolute', right: 9, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--ink-4)', fontFamily: 'Geist Mono, monospace' }}>{suffix}</span>}
+    </div>
+  );
+};
 
 const TextArea = ({ value, onChange }) => (
   <textarea
@@ -113,6 +136,21 @@ const ParamControl = ({ schema, value, onChange }) => {
   return null;
 };
 
+const RawUploadControl = ({ node, artifact, onUpload }) => (
+  <div style={{ marginTop: 10, padding: 10, background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 6 }}>
+    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Source atlas</div>
+    <input
+      type="file"
+      accept="image/png,image/jpeg,image/webp"
+      onChange={(e) => onUpload?.(node.id, e.target.files?.[0])}
+      style={{ width: '100%', fontSize: 11 }}
+    />
+    <div style={{ marginTop: 8, fontSize: 10.5, color: artifact ? 'var(--green)' : 'var(--ink-4)', fontFamily: 'Geist Mono, monospace' }}>
+      {artifact ? `${artifact.name} - ${artifact.width || '?'}x${artifact.height || '?'} px` : 'Upload an image to create the raw atlas artifact.'}
+    </div>
+  </div>
+);
+
 // --- Tab strip ---
 const Tabs = ({ tabs, active, onChange }) => (
   <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', padding: '0 14px', background: '#fff' }}>
@@ -148,25 +186,15 @@ const Tabs = ({ tabs, active, onChange }) => (
 
 // --- Build command preview ---
 function buildCommand(node, def) {
-  if (!def.script) return null;
-  const params = { ...def.defaults, ...(node.params || {}) };
-  const args = Object.entries(params)
-    .filter(([k, v]) => v !== undefined && v !== '' && v !== null && k !== 'preset')
-    .map(([k, v]) => {
-      if (typeof v === 'boolean') return v ? `--${k}` : null;
-      const s = String(v);
-      const needsQuotes = /[\s,]/.test(s);
-      return `--${k} ${needsQuotes ? `"${s}"` : s}`;
-    })
-    .filter(Boolean);
-  return `python ${def.script} \\\n  ${args.join(' \\\n  ')}`;
+  if (window.BrowserPipeline?.buildBrowserCommand) return window.BrowserPipeline.buildBrowserCommand(node, def);
+  return `browser-pipeline.run(${node.type})`;
 }
 
 // --- Inspector main component ---
 const Inspector = ({
   node, def, edges, nodes,
-  onParamChange, onClose, onRun, onDuplicate, onBranch, onDelete, onOpenDashboard,
-  runningId, runningPct, logs,
+  onParamChange, onUploadInput, onClose, onRun, onDuplicate, onBranch, onDelete, onOpenDashboard,
+  runningId, runningPct, logs, artifacts, uploadArtifact,
 }) => {
   const [tab, setTab] = React.useState('params');
 
@@ -180,6 +208,7 @@ const Inspector = ({
   const incoming = edges.filter(e => e.to === node.id);
   const outgoing = edges.filter(e => e.from === node.id);
   const isRunning = runningId === node.id;
+  const isBlockedByOtherRun = runningId && runningId !== node.id;
   const color = COLOR_TOKENS[def.color] || COLOR_TOKENS.accent;
   const IconComp = I[def.icon] || I.Box;
 
@@ -205,21 +234,22 @@ const Inspector = ({
           </div>
           <button onClick={onClose} style={{ ...iconBtnBase }} title="Close"><I.X size={14} /></button>
         </div>
-        <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>{def.description}</p>
+                <p style={{ margin: '8px 0 0', fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>{def.description}</p>
+        {node.type === 'raw_input' && <RawUploadControl node={node} artifact={uploadArtifact?.artifacts?.atlas} onUpload={onUploadInput} />}
 
         {/* Action row */}
         <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
           <button
             onClick={() => onRun(node.id)}
-            disabled={isRunning}
+            disabled={isRunning || isBlockedByOtherRun}
             style={{
               flex: 1, height: 32, padding: '0 12px', border: 'none', borderRadius: 6,
-              background: isRunning ? '#9aa1ab' : 'var(--ink)', color: '#fff',
-              fontSize: 12, fontWeight: 600, cursor: isRunning ? 'not-allowed' : 'pointer',
+              background: (isRunning || isBlockedByOtherRun) ? '#9aa1ab' : 'var(--ink)', color: '#fff',
+              fontSize: 12, fontWeight: 600, cursor: (isRunning || isBlockedByOtherRun) ? 'not-allowed' : 'pointer',
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             }}
           >
-            {isRunning ? <><Spinner /> Running… {Math.floor(runningPct)}%</> : <><I.Play size={11} /> Run node</>}
+            {isRunning ? <><Spinner /> Running... {Math.floor(runningPct)}%</> : isBlockedByOtherRun ? <>Run in progress</> : <><I.Play size={11} /> Run node</>}
           </button>
           <IconBtn onClick={() => onBranch(node.id)} title="Branch from this node"><I.Branch size={14} /></IconBtn>
           <IconBtn onClick={() => onDuplicate(node.id)} title="Duplicate"><I.Duplicate size={14} /></IconBtn>
@@ -248,8 +278,8 @@ const Inspector = ({
 
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
         {tab === 'params' && <ParamsTab def={def} node={node} params={params} onParamChange={onParamChange} />}
-        {tab === 'preview' && <PreviewTab def={def} node={node} params={params} />}
-        {tab === 'artifacts' && <ArtifactsTab def={def} node={node} />}
+        {tab === 'preview' && <PreviewTab def={def} node={node} params={params} artifacts={artifacts} />}
+        {tab === 'artifacts' && <ArtifactsTab def={def} node={node} artifacts={artifacts} />}
         {tab === 'logs' && <LogsTab def={def} node={node} logs={logs} isRunning={isRunning} />}
         {tab === 'cmd' && <CommandTab def={def} cmd={cmd} node={node} params={params} />}
       </div>
@@ -305,16 +335,16 @@ const ParamsTab = ({ def, node, params, onParamChange }) => {
       })}
 
       {/* Tile grid editor for classify node */}
-      {def.title === 'Tile Classification' && <ClassMapEditor params={params} />}
+      {def.title === 'Tile Classification' && <ClassMapEditor params={params} onChange={(next) => onParamChange(node.id, { ...node.params, custom_class_string: next })} />}
       {/* Seam table for seam_report */}
-      {def.title === 'Seam Report' && <SeamTablePreview />}
+      {def.title === 'Seam Report' && <div style={{ marginTop: 14, color: 'var(--ink-4)', fontSize: 11 }}>Run this node to compute seam scores from the connected atlas.</div>}
     </div>
   );
 };
 
-const ClassMapEditor = ({ params }) => {
+const ClassMapEditor = ({ params, onChange }) => {
   const colors = { grass_base: '#56a050', transition: '#d99a45', dirt_base: '#8d5d33', props: '#7c3aed' };
-  // Parse class string
+  const classes = Object.keys(colors);
   const map = {};
   (params.custom_class_string || '').split(';').forEach(part => {
     const [cls, ranges] = part.split(':');
@@ -326,6 +356,18 @@ const ClassMapEditor = ({ params }) => {
       } else map[Number(r)] = cls.trim();
     });
   });
+  const serialize = (nextMap) => classes
+    .map(cls => {
+      const ids = Object.keys(nextMap).map(Number).filter(id => nextMap[id] === cls).sort((a, b) => a - b);
+      return ids.length ? `${cls}:${ids.join(',')}` : null;
+    })
+    .filter(Boolean)
+    .join(';');
+  const cycleTile = (id) => {
+    const current = map[id];
+    const next = classes[(classes.indexOf(current) + 1) % classes.length];
+    onChange(serialize({ ...map, [id]: next }));
+  };
   return (
     <div style={{ marginTop: 16 }}>
       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
@@ -336,13 +378,13 @@ const ClassMapEditor = ({ params }) => {
           const id = i + 1;
           const cls = map[id];
           return (
-            <div key={i} style={{
+            <button key={i} type="button" onClick={() => cycleTile(id)} style={{
               aspectRatio: '1', background: cls ? colors[cls] : '#2a2e35',
-              borderRadius: 2, position: 'relative',
+              border: 0, borderRadius: 2, position: 'relative',
               fontSize: 8.5, color: '#fff', fontFamily: 'Geist Mono, monospace',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              cursor: 'pointer', userSelect: 'none',
-            }}>{id}</div>
+              padding: 0, cursor: 'pointer', userSelect: 'none',
+            }}>{id}</button>
           );
         })}
       </div>
@@ -357,190 +399,31 @@ const ClassMapEditor = ({ params }) => {
   );
 };
 
-const SeamTablePreview = () => {
-  const verdictStyle = (v) => {
-    if (v.startsWith('yes')) return { bg: 'var(--green-soft)', fg: 'var(--green)', label: 'Yes' };
-    if (v.startsWith('maybe')) return { bg: 'var(--amber-soft)', fg: 'var(--amber)', label: 'Maybe' };
-    return { bg: 'var(--red-soft)', fg: 'var(--red)', label: v.includes('expected') ? 'No (ok)' : 'No' };
-  };
-  return (
-    <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>
-        Self-repeat scores
-      </div>
-      <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, overflow: 'hidden' }}>
-        <div style={{
-          display: 'grid', gridTemplateColumns: '36px 1fr 50px 50px 60px',
-          fontSize: 10, color: 'var(--ink-4)', padding: '6px 9px',
-          background: 'var(--surface-2)', borderBottom: '1px solid var(--border)',
-          fontFamily: 'Geist Mono, monospace', textTransform: 'uppercase',
-        }}>
-          <span>tile</span><span>class</span><span>L/R</span><span>T/B</span><span>worst</span>
-        </div>
-        {SEAM_ROWS.map(r => {
-          const v = verdictStyle(r.verdict);
-          return (
-            <div key={r.tile} style={{
-              display: 'grid', gridTemplateColumns: '36px 1fr 50px 50px 60px',
-              fontSize: 10.5, padding: '6px 9px',
-              fontFamily: 'Geist Mono, monospace',
-              borderBottom: '1px solid var(--border)',
-              alignItems: 'center',
-            }}>
-              <span style={{ color: 'var(--ink-2)', fontWeight: 600 }}>{r.tile}</span>
-              <span style={{ color: 'var(--ink-3)' }}>{r.cls}</span>
-              <span style={{ color: 'var(--ink-2)' }}>{r.l_r.toFixed(1)}</span>
-              <span style={{ color: 'var(--ink-2)' }}>{r.t_b.toFixed(1)}</span>
-              <span style={{
-                color: v.fg, background: v.bg, padding: '1px 5px', borderRadius: 3,
-                textAlign: 'center', fontSize: 9.5, fontWeight: 600,
-              }}>{r.worst.toFixed(1)} {v.label}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ fontSize: 10, color: 'var(--ink-4)', marginTop: 6, lineHeight: 1.5 }}>
-        Thresholds: 0–5 excellent · 5–15 acceptable · 15–30 visible seam possible · 30+ likely bad
-      </div>
-    </div>
-  );
-};
-
-const PreviewTab = ({ def, node, params }) => {
-  if (def.title === 'Clean Tileset') {
+const PreviewTab = ({ def, node, params, artifacts }) => {
+  const image = artifacts?.list?.find(a => a.kind === 'image') || Object.values(artifacts?.artifacts || {}).find(a => a?.kind === 'image');
+  if (!image) {
     return (
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Raw vs cleaned</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-          <PreviewBox label="Raw input">
-            <AtlasCanvas scheme="grass_dirty" cols={8} rows={8} tilePx={22} style={{ width: '100%', display: 'block' }} />
-          </PreviewBox>
-          <PreviewBox label="Cleaned 128px">
-            <AtlasCanvas scheme="grass_clean" cols={8} rows={8} tilePx={22} style={{ width: '100%', display: 'block' }} />
-          </PreviewBox>
-        </div>
-        <ZoomBar value={params.tile_size} />
-      </div>
-    );
-  }
-  if (def.title === 'Base Repair') {
-    return (
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Before / after — tile #8</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
-          <PreviewBox label="Before">
-            <RepeatCanvas palette="grass" seed={42} tilePx={36} reps={4} showSeam style={{ width: '100%', display: 'block' }} />
-          </PreviewBox>
-          <PreviewBox label="After">
-            <RepeatCanvas palette="grass" seed={71} tilePx={36} reps={4} showSeam={false} style={{ width: '100%', display: 'block' }} />
-          </PreviewBox>
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Worst-diff metrics</div>
-        <MetricBars before={9.8} after={4.2} />
-      </div>
-    );
-  }
-  if (def.title === 'Preview Map') {
-    return (
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>20×20 random preview, seed {params.seed}</div>
-        <div style={{ background: '#0f1115', borderRadius: 6, padding: 4, overflow: 'hidden' }}>
-          <AtlasCanvas scheme="preview_grass" cols={20} rows={20} tilePx={14} seedBase={params.seed} style={{ width: '100%', display: 'block' }} />
-        </div>
-      </div>
-    );
-  }
-  if (def.title === 'Transition Generator') {
-    return (
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Generated transition tiles · {params.preset || 'custom'}</div>
-        <div style={{ background: '#0f1115', borderRadius: 6, padding: 6, marginBottom: 10 }}>
-          <AtlasCanvas scheme="transitions" cols={9} rows={3} tilePx={28} seedBase={params.seed || 42} padding={1} style={{ width: '100%', display: 'block' }} />
-        </div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Semantic side labels</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4, fontSize: 10.5, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace' }}>
-          {['edge_b_top', 'edge_b_bottom', 'edge_b_left', 'edge_b_right', 'corner_b_top_left', 'corner_b_top_right', 'corner_b_bottom_left', 'corner_b_bottom_right', 'island_b'].map(s => (
-            <div key={s} style={{ padding: '4px 6px', background: '#fff', border: '1px solid var(--border)', borderRadius: 4 }}>{s}</div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (def.title === 'Extrude / Padding') {
-    return (
-      <div>
-        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Original vs padded</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
-          <PreviewBox label="Original">
-            <AtlasCanvas scheme="grass_clean" cols={8} rows={8} tilePx={20} style={{ width: '100%', display: 'block' }} />
-          </PreviewBox>
-          <PreviewBox label={`Padded ${params.padding}px`}>
-            <AtlasCanvas scheme="grass_clean" cols={8} rows={8} tilePx={20} padding={params.padding || 2} style={{ width: '100%', display: 'block' }} />
-          </PreviewBox>
-        </div>
-        <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: 10, fontFamily: 'Geist Mono, monospace', fontSize: 11 }}>
-          <div style={{ color: 'var(--ink-4)', marginBottom: 4 }}>Tiled / Godot import settings:</div>
-          <div>tile_size: {params.tile_size}</div>
-          <div>margin: {params.padding}</div>
-          <div>spacing: {params.padding * 2}</div>
-        </div>
+      <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-4)', fontSize: 12 }}>
+        <I.Eye size={28} style={{ opacity: 0.4 }} />
+        <div style={{ marginTop: 8 }}>No generated preview yet</div>
+        <div style={{ marginTop: 4, fontSize: 10.5 }}>Upload/run the required upstream nodes, then run this node.</div>
       </div>
     );
   }
   return (
-    <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--ink-4)', fontSize: 12 }}>
-      <I.Eye size={28} style={{ opacity: 0.4 }} />
-      <div style={{ marginTop: 8 }}>No preview for this node type</div>
-    </div>
-  );
-};
-
-const PreviewBox = ({ label, children }) => (
-  <div>
-    <div style={{ background: '#0f1115', borderRadius: 6, padding: 4, overflow: 'hidden' }}>{children}</div>
-    <div style={{ fontSize: 9.5, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4, fontFamily: 'Geist Mono, monospace' }}>{label}</div>
-  </div>
-);
-
-const ZoomBar = ({ value }) => (
-  <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-    {[100, 200, 400].map(z => (
-      <button key={z} style={{
-        flex: 1, height: 24, padding: 0, fontSize: 10.5, fontFamily: 'Geist Mono, monospace',
-        border: '1px solid var(--border-strong)', background: '#fff', borderRadius: 4,
-        color: 'var(--ink-2)', cursor: 'pointer',
-      }}>{z}%</button>
-    ))}
-  </div>
-);
-
-const MetricBars = ({ before, after }) => {
-  const max = Math.max(before, after, 15);
-  return (
-    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, padding: 10 }}>
-      {[
-        { label: 'before', val: before, color: 'var(--red)' },
-        { label: 'after',  val: after,  color: 'var(--green)' },
-      ].map(b => (
-        <div key={b.label} style={{ marginBottom: 6 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, fontFamily: 'Geist Mono, monospace', marginBottom: 3 }}>
-            <span style={{ color: 'var(--ink-3)' }}>{b.label}</span>
-            <span style={{ color: 'var(--ink-2)' }}>{b.val.toFixed(1)}</span>
-          </div>
-          <div style={{ height: 6, background: '#eef0f3', borderRadius: 99, overflow: 'hidden' }}>
-            <div style={{ width: `${(b.val / max) * 100}%`, height: '100%', background: b.color, borderRadius: 99 }} />
-          </div>
-        </div>
-      ))}
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 6, fontFamily: 'Geist Mono, monospace' }}>
-        improvement: {(((before - after) / before) * 100).toFixed(0)}%
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Latest generated image</div>
+      <div style={{ background: '#0f1115', borderRadius: 6, padding: 6, overflow: 'hidden' }}>
+        <img src={image.url} alt={image.name} style={{ width: '100%', display: 'block', imageRendering: 'pixelated' }} />
       </div>
+      <div style={{ fontSize: 10.5, color: 'var(--ink-4)', fontFamily: 'Geist Mono, monospace', marginTop: 8 }}>{image.name} - {image.width || '?'}x{image.height || '?'} px</div>
     </div>
   );
 };
 
-const ArtifactsTab = ({ def, node }) => {
+const ArtifactsTab = ({ def, node, artifacts }) => {
   const outputs = def.outputs || [];
+  const generated = artifacts?.artifacts || {};
   const kindIcon = (k) => {
     if (k === 'image') return <I.Image size={14} />;
     if (k === 'csv') return <I.CSV size={14} />;
@@ -548,43 +431,48 @@ const ArtifactsTab = ({ def, node }) => {
     if (k === 'folder') return <I.Folder size={14} />;
     return <I.File size={14} />;
   };
-  const fakePath = (p) => {
-    const base = `out/${node.id}/`;
-    if (p.kind === 'image') return `${base}${p.id}.png`;
-    if (p.kind === 'csv') return `${base}${p.id}.csv`;
-    if (p.kind === 'md') return `${base}${p.id}.md`;
-    if (p.kind === 'json') return `${base}${p.id}.json`;
-    if (p.kind === 'yaml') return `${base}${p.id}.yaml`;
-    if (p.kind === 'folder') return `${base}${p.id}/`;
-    return `${base}${p.id}`;
+  const download = (artifact, fallback) => {
+    if (!artifact?.url) return;
+    const a = document.createElement('a');
+    a.href = artifact.url;
+    a.download = artifact.name || fallback;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
   return (
     <div>
       <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
-        Outputs from latest run · {node.runs > 0 ? 'today 14:24' : 'no runs yet'}
+        Outputs from latest run - {artifacts?.generatedAt ? new Date(artifacts.generatedAt).toLocaleString() : 'run this node to generate artifacts'}
       </div>
-      {outputs.map(p => (
-        <div key={p.id} style={{
-          display: 'flex', alignItems: 'center', gap: 10,
-          padding: 10, background: '#fff', border: '1px solid var(--border)',
-          borderRadius: 6, marginBottom: 6,
-        }}>
-          <div style={{ width: 28, height: 28, borderRadius: 5, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)' }}>
-            {kindIcon(p.kind)}
+      {outputs.map(p => {
+        const artifact = generated[p.id];
+        const name = artifact?.name || `${node.id}-${p.id}`;
+        return (
+          <div key={p.id} style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: 10, background: '#fff', border: '1px solid var(--border)',
+            borderRadius: 6, marginBottom: 6,
+          }}>
+            <div style={{ width: 28, height: 28, borderRadius: 5, background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink-3)' }}>
+              {kindIcon(artifact?.kind || p.kind)}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 500 }}>{p.label}</div>
+              <div style={{ fontSize: 10.5, color: 'var(--ink-4)', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {artifact ? `${name} - ${Math.max(1, Math.round((artifact.size || 0) / 1024))} KB` : 'not generated yet'}
+              </div>
+            </div>
+            <IconBtn onClick={() => download(artifact, name)} title="Download" style={{ opacity: artifact ? 1 : 0.35, pointerEvents: artifact ? 'auto' : 'none' }}><I.Download size={13} /></IconBtn>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 500 }}>{p.label}</div>
-            <div style={{ fontSize: 10.5, color: 'var(--ink-4)', fontFamily: 'Geist Mono, monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fakePath(p)}</div>
-          </div>
-          <IconBtn title="Download"><I.Download size={13} /></IconBtn>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
 
 const LogsTab = ({ def, node, logs, isRunning }) => {
-  const lines = logs || SAMPLE_LOGS[node.type] || ['(no logs yet — run this node to see output)'];
+  const lines = logs || ['(no logs yet - run this node to see browser output)'];
   const ref = React.useRef(null);
   React.useEffect(() => { if (ref.current) ref.current.scrollTop = ref.current.scrollHeight; }, [lines.length]);
   return (
@@ -621,7 +509,7 @@ const CommandTab = ({ def, cmd, node, params }) => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Command preview</span>
         <button
-          onClick={() => { navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
+          onClick={() => { if (!navigator.clipboard?.writeText) return; navigator.clipboard.writeText(cmd).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }).catch(() => {}); }}
           style={{
             background: '#fff', border: '1px solid var(--border-strong)', borderRadius: 5,
             padding: '3px 8px', fontSize: 10.5, color: 'var(--ink-2)', cursor: 'pointer',
