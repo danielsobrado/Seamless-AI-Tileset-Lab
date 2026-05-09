@@ -1,6 +1,7 @@
 .vite/
 .history/
 node_modules/
-dist/validation-artifacts/
+dist/
+validation-artifacts/
 test-results/
 playwright-report/
