@@ -7,11 +7,13 @@
                     "build":  "node scripts/build.mjs",
                     "serve":  "npx http-server dist -c-1",
                     "dev":  "npx http-server . -c-1",
-                    "smoke":  "node scripts/smoke.mjs"
+                    "smoke":  "node scripts/smoke.mjs",
+                    "test:e2e":  "playwright test"
                 },
     "devDependencies":  {
                             "@babel/core":  "^7.29.0",
                             "@babel/preset-react":  "^7.28.5",
+                            "@playwright/test":  "^1.59.1",
                             "http-server":  "^14.1.1"
                         }
 }
