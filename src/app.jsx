@@ -6,6 +6,59 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "density": "comfortable"
 }/*EDITMODE-END*/;
 
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 24,
+          background: 'var(--bg)',
+          color: 'var(--ink)',
+          fontFamily: 'Geist, system-ui, sans-serif',
+        }}>
+          <div style={{
+            maxWidth: 560,
+            background: '#fff',
+            border: '1px solid var(--border)',
+            borderRadius: 12,
+            boxShadow: 'var(--shadow-2)',
+            padding: 20,
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>The pipeline UI hit an error.</div>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.6, marginBottom: 12 }}>
+              Refresh the page to continue. Any downloaded artifacts remain on disk; in-memory browser artifacts will need to be regenerated.
+            </div>
+            <pre style={{
+              margin: 0,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontSize: 11,
+              color: 'var(--red)',
+              background: 'var(--red-soft)',
+              borderRadius: 8,
+              padding: 12,
+            }}>{String(this.state.error?.message || this.state.error)}</pre>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const App = () => {
   const [tweaks, setTweak] = window.useTweaks ? window.useTweaks(TWEAK_DEFAULTS) : [TWEAK_DEFAULTS, () => {}];
   const tweaksData = Array.isArray(tweaks) ? tweaks[0] : tweaks;
@@ -498,4 +551,4 @@ const TweaksHook = ({ tweaks, setTweak }) => {
   );
 };
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+ReactDOM.createRoot(document.getElementById('root')).render(<ErrorBoundary><App /></ErrorBoundary>);
