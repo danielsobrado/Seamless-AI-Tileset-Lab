@@ -59,6 +59,20 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+function revokeArtifactResult(result) {
+  const seen = new Set();
+  const items = [
+    ...(result?.list || []),
+    ...Object.values(result?.artifacts || {}),
+  ];
+  items.forEach((artifact) => {
+    if (artifact?.url && !seen.has(artifact.url)) {
+      seen.add(artifact.url);
+      URL.revokeObjectURL(artifact.url);
+    }
+  });
+}
+
 const App = () => {
   const [tweaks, setTweak] = window.useTweaks ? window.useTweaks(TWEAK_DEFAULTS) : [TWEAK_DEFAULTS, () => {}];
   const tweaksData = Array.isArray(tweaks) ? tweaks[0] : tweaks;
@@ -123,15 +137,18 @@ const App = () => {
     const meta = window.BrowserPipeline?.makeJsonArtifact
       ? window.BrowserPipeline.makeJsonArtifact('source-metadata.json', { source_label: file.name, width, height, uploaded_at: new Date().toISOString() })
       : null;
-    setArtifacts(A => ({
-      ...A,
-      [nodeId]: {
+    setArtifacts(A => {
+      revokeArtifactResult(A[nodeId]);
+      return {
+        ...A,
+        [nodeId]: {
         nodeId,
         generatedAt: new Date().toISOString(),
         artifacts: { atlas, ...(meta ? { meta } : {}) },
         list: meta ? [atlas, meta] : [atlas],
       },
-    }));
+      };
+    });
     setLogs(L => ({ ...L, [nodeId]: [`[upload] ${file.name}`, `[upload] ${width || '?'}x${height || '?'} px`, '[upload] ready as raw atlas artifact'] }));
     setNodes(ns => ns.map(n => n.id === nodeId ? { ...n, status: 'success', runs: Math.max(1, n.runs || 0), params: { ...n.params, source_label: file.name } } : n));
   }, []);
@@ -157,7 +174,10 @@ const App = () => {
         onLog: (line) => setLogs(L => ({ ...L, [id]: [...(L[id] || []), line] })),
         onProgress: (pct) => setRunning({ id, pct }),
       });
-      setArtifacts(A => ({ ...A, [id]: result }));
+      setArtifacts(A => {
+        revokeArtifactResult(A[id]);
+        return { ...A, [id]: result };
+      });
       setNodes(ns => ns.map(n => n.id === id ? { ...n, status: 'success', runs: (n.runs || 0) + 1 } : n));
       setHistory(h => [{
         id: 'r' + Math.random().toString(36).slice(2, 7),
@@ -200,6 +220,12 @@ const App = () => {
   const onDelete = useCallback((id) => {
     setNodes(ns => ns.filter(n => n.id !== id));
     setEdges(es => es.filter(e => e.from !== id && e.to !== id));
+    setArtifacts(A => {
+      revokeArtifactResult(A[id]);
+      const next = { ...A };
+      delete next[id];
+      return next;
+    });
     setSelectedId(null);
   }, []);
 
