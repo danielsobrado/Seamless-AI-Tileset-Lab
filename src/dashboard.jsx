@@ -16,6 +16,7 @@ const Dashboard = ({ nodes, artifacts, branchA, branchB, onClose, onSetBranch })
   const diffs = allKeys.filter(k => JSON.stringify(paramsA[k]) !== JSON.stringify(paramsB[k]));
   const imageA = firstImageArtifact(artifacts?.[branchA]);
   const imageB = firstImageArtifact(artifacts?.[branchB]);
+  const branchOptions = nodes.filter(n => firstImageArtifact(artifacts?.[n.id]));
 
   const onSplitDrag = (e) => {
     const rect = containerRef.current.getBoundingClientRect();
@@ -40,6 +41,18 @@ const Dashboard = ({ nodes, artifacts, branchA, branchB, onClose, onSetBranch })
             <div style={{ fontSize: 14, fontWeight: 600 }}>Comparison Dashboard</div>
             <div style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace' }}>{nodeA.id} vs {nodeB.id}</div>
           </div>
+          <BranchSelect
+            label="A"
+            value={branchA}
+            nodes={branchOptions}
+            onChange={(id) => onSetBranch?.('a', id)}
+          />
+          <BranchSelect
+            label="B"
+            value={branchB}
+            nodes={branchOptions}
+            onChange={(id) => onSetBranch?.('b', id)}
+          />
           <IconBtn onClick={onClose} title="Close"><I.X size={15} /></IconBtn>
         </div>
 
@@ -86,6 +99,30 @@ const Dashboard = ({ nodes, artifacts, branchA, branchB, onClose, onSetBranch })
 function firstImageArtifact(result) {
   return result?.list?.find(a => a.kind === 'image') || Object.values(result?.artifacts || {}).find(a => a?.kind === 'image') || null;
 }
+
+const BranchSelect = ({ label, value, nodes, onChange }) => (
+  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--ink-3)' }}>
+    {label}
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      style={{
+        height: 28,
+        minWidth: 180,
+        border: '1px solid var(--border-strong)',
+        borderRadius: 6,
+        background: '#fff',
+        color: 'var(--ink-2)',
+        font: '11px Geist Mono, monospace',
+      }}
+    >
+      {nodes.length === 0 && <option value={value}>No image artifacts yet</option>}
+      {nodes.map(node => (
+        <option key={node.id} value={node.id}>{node.id}</option>
+      ))}
+    </select>
+  </label>
+);
 
 function labelStyle(side) {
   return { position: 'absolute', [side]: 12, top: 12, padding: '4px 10px', background: 'rgba(15,17,21,0.7)', color: '#fff', fontSize: 11, borderRadius: 4, fontWeight: 600 };
