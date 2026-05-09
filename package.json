@@ -1,0 +1,16 @@
+﻿{
+  "name": "seamless-ai-tileset-lab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "serve": "npx http-server dist -c-1",
+    "dev": "npx http-server . -c-1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-react": "^7.28.5",
+    "http-server": "^14.1.1"
+  }
+}
