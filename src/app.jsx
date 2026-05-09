@@ -17,6 +17,7 @@ const App = () => {
   const [history, setHistory] = useState(INITIAL_HISTORY);
   const [running, setRunning] = useState(null); // { id, pct }
   const [logs, setLogs] = useState({});
+  const [artifacts, setArtifacts] = useState({});
   const [showDashboard, setShowDashboard] = useState(false);
   const [dashboardPair, setDashboardPair] = useState({ a: 'n_transitions_C', b: 'n_transitions_G' });
   const [leftTab, setLeftTab] = useState('nodes'); // 'nodes' | 'history' | 'artifacts'
@@ -45,43 +46,82 @@ const App = () => {
     setNodes(ns => ns.map(n => n.id === id ? { ...n, params } : n));
   }, []);
 
-  const onRun = useCallback((id) => {
+  const onUploadInput = useCallback(async (nodeId, file) => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    let width = 0, height = 0;
+    try {
+      const bitmap = await createImageBitmap(file);
+      width = bitmap.width;
+      height = bitmap.height;
+      bitmap.close?.();
+    } catch (_) {}
+    const atlas = {
+      name: file.name,
+      kind: 'image',
+      mime: file.type || 'image/png',
+      blob: file,
+      url,
+      size: file.size,
+      width,
+      height,
+      meta: { uploaded: true },
+    };
+    const meta = window.BrowserPipeline?.makeJsonArtifact
+      ? window.BrowserPipeline.makeJsonArtifact('source-metadata.json', { source_label: file.name, width, height, uploaded_at: new Date().toISOString() })
+      : null;
+    setArtifacts(A => ({
+      ...A,
+      [nodeId]: {
+        nodeId,
+        generatedAt: new Date().toISOString(),
+        artifacts: { atlas, ...(meta ? { meta } : {}) },
+        list: meta ? [atlas, meta] : [atlas],
+      },
+    }));
+    setLogs(L => ({ ...L, [nodeId]: [`[upload] ${file.name}`, `[upload] ${width || '?'}x${height || '?'} px`, '[upload] ready as raw atlas artifact'] }));
+    setNodes(ns => ns.map(n => n.id === nodeId ? { ...n, status: 'success', runs: Math.max(1, n.runs || 0), params: { ...n.params, source_label: file.name } } : n));
+  }, []);
+
+  const onRun = useCallback(async (id) => {
+    if (running) return;
     const node = nodes.find(n => n.id === id);
     if (!node) return;
+    const def = NODE_TYPES[node.type];
+    if (!def || !window.runBrowserNode) return;
+
     setRunning({ id, pct: 0 });
-    setNodes(ns => ns.map(n => n.id === id ? { ...n, status: 'running' } : n));
-    // Stream logs
-    const sample = SAMPLE_LOGS[node.type] || ['$ run', '[run] working...', '[run] done'];
-    let i = 0;
     setLogs(L => ({ ...L, [id]: [] }));
-    const logTimer = setInterval(() => {
-      if (i >= sample.length) { clearInterval(logTimer); return; }
-      setLogs(L => ({ ...L, [id]: [...(L[id] || []), sample[i]] }));
-      i++;
-    }, 220);
-    // Progress
-    let pct = 0;
-    const pctTimer = setInterval(() => {
-      pct += 6 + Math.random() * 10;
-      if (pct >= 100) {
-        pct = 100;
-        clearInterval(pctTimer);
-        setRunning(null);
-        setNodes(ns => ns.map(n => n.id === id ? { ...n, status: 'success', runs: (n.runs || 0) + 1 } : n));
-        setHistory(h => [{
-          id: 'r' + Math.random().toString(36).slice(2, 7),
-          node: id,
-          label: `${NODE_TYPES[node.type].title.toLowerCase()} (manual run)`,
-          when: 'just now',
-          duration: ((sample.length * 0.22) + 0.3).toFixed(1) + 's',
-          status: 'ok',
-          score: null,
-        }, ...h]);
-      } else {
-        setRunning({ id, pct });
-      }
-    }, 220);
-  }, [nodes]);
+    setNodes(ns => ns.map(n => n.id === id ? { ...n, status: 'running' } : n));
+
+    try {
+      const result = await window.runBrowserNode({
+        node,
+        def,
+        nodes,
+        edges,
+        artifacts,
+        onLog: (line) => setLogs(L => ({ ...L, [id]: [...(L[id] || []), line] })),
+        onProgress: (pct) => setRunning({ id, pct }),
+      });
+      setArtifacts(A => ({ ...A, [id]: result }));
+      setNodes(ns => ns.map(n => n.id === id ? { ...n, status: 'success', runs: (n.runs || 0) + 1 } : n));
+      setHistory(h => [{
+        id: 'r' + Math.random().toString(36).slice(2, 7),
+        node: id,
+        label: `${NODE_TYPES[node.type].title.toLowerCase()} (browser run)`,
+        when: 'just now',
+        duration: 'browser',
+        status: 'ok',
+        score: null,
+      }, ...h]);
+    } catch (err) {
+      setLogs(L => ({ ...L, [id]: [...(L[id] || []), `[error] ${err?.message || err}`] }));
+      setNodes(ns => ns.map(n => n.id === id ? { ...n, status: 'error' } : n));
+    } finally {
+      setRunning(null);
+    }
+  }, [nodes, edges, artifacts, running]);
 
   const onDuplicate = useCallback((id) => {
     const node = nodes.find(n => n.id === id);
@@ -142,6 +182,7 @@ const App = () => {
           onSelectHistory={(node) => setSelectedId(node)}
           onAddNode={onAddNode}
           nodes={nodes}
+          artifacts={artifacts}
         />
         <div style={{ flex: 1, position: 'relative', minWidth: 0 }}>
           <GraphCanvas
@@ -159,6 +200,7 @@ const App = () => {
             showGrid={showGrid}
             runningId={running?.id}
             runningPct={running?.pct || 0}
+            artifacts={artifacts}
             onCanvasClick={() => setSelectedId(null)}
           />
           {/* Floating help / dashboard quick-open */}
@@ -183,6 +225,7 @@ const App = () => {
             node={selected} def={selectedDef}
             edges={edges} nodes={nodes}
             onParamChange={onParamChange}
+            onUploadInput={onUploadInput}
             onClose={() => setSelectedId(null)}
             onRun={onRun}
             onDuplicate={onDuplicate}
@@ -192,12 +235,15 @@ const App = () => {
             runningId={running?.id}
             runningPct={running?.pct || 0}
             logs={logs[selectedId]}
+            artifacts={selectedId ? artifacts[selectedId] : null}
+            uploadArtifact={selectedId ? artifacts[selectedId] : null}
           />
         </div>
       </div>
       {showDashboard && (
         <Dashboard
           nodes={nodes}
+          artifacts={artifacts}
           branchA={dashboardPair.a}
           branchB={dashboardPair.b}
           onClose={() => setShowDashboard(false)}
@@ -231,40 +277,22 @@ const Header = ({ onOpenDashboard, runs }) => (
         <div style={{ fontSize: 9.5, color: 'var(--ink-4)', marginTop: -1, fontFamily: 'Geist Mono, monospace' }}>AI Tileset Lab · grass_to_dirt</div>
       </div>
     </div>
-
     <span style={{ width: 1, height: 24, background: 'var(--border)' }} />
 
-    <div style={{ display: 'flex', gap: 2, padding: 3, background: 'var(--surface-2)', borderRadius: 7 }}>
-      {['Pipeline', 'Artifacts', 'Runs'].map((t, i) => (
-        <button key={t} style={{
-          background: i === 0 ? '#fff' : 'transparent',
-          border: 'none', borderRadius: 5, padding: '5px 10px',
-          fontSize: 11.5, fontWeight: 500,
-          color: i === 0 ? 'var(--ink)' : 'var(--ink-3)',
-          boxShadow: i === 0 ? 'var(--shadow-1)' : 'none', cursor: 'pointer',
-        }}>{t}</button>
-      ))}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace' }}>
+      browser-only pipeline
     </div>
 
     <div style={{ flex: 1 }} />
 
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-      <button style={btnSecondary}><I.Zap size={12} /> Run downstream</button>
-      <button style={btnSecondary}><I.Lock size={12} /> Seed locked: 42</button>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ fontSize: 11, color: 'var(--ink-3)', fontFamily: 'Geist Mono, monospace' }}>{runs} run(s)</span>
       <button onClick={onOpenDashboard} style={btnSecondary}><I.Compare size={12} /> Dashboard</button>
-      <span style={{ width: 1, height: 24, background: 'var(--border)', margin: '0 4px' }} />
-      <IconBtn title="History"><I.History size={15} /></IconBtn>
-      <IconBtn title="Notifications"><I.Bell size={15} /></IconBtn>
-      <IconBtn title="Help"><I.Help size={15} /></IconBtn>
-      <button style={{ ...btnSecondary, marginLeft: 6, background: 'var(--ink)', color: '#fff', border: 'none' }}>
-        <I.Share size={12} /> Share experiment
-      </button>
-    </div>
-  </div>
+    </div></div>
 );
 
 // --- Left rail ---
-const LeftRail = ({ tab, onTab, search, onSearch, history, onSelectHistory, onAddNode, nodes }) => {
+const LeftRail = ({ tab, onTab, search, onSearch, history, onSelectHistory, onAddNode, nodes, artifacts }) => {
   return (
     <div style={{
       width: 240, flexShrink: 0,
@@ -314,7 +342,7 @@ const LeftRail = ({ tab, onTab, search, onSearch, history, onSelectHistory, onAd
       <div style={{ flex: 1, overflow: 'auto' }}>
         {tab === 'nodes' && <NodesPalette search={search} onAddNode={onAddNode} />}
         {tab === 'history' && <HistoryList history={history} onSelectHistory={onSelectHistory} />}
-        {tab === 'artifacts' && <ArtifactsBrowser nodes={nodes} onSelectHistory={onSelectHistory} />}
+        {tab === 'artifacts' && <ArtifactsBrowser artifacts={artifacts} onSelectHistory={onSelectHistory} />}
       </div>
     </div>
   );
@@ -414,34 +442,36 @@ const HistoryList = ({ history, onSelectHistory }) => (
   </div>
 );
 
-const ArtifactsBrowser = ({ nodes, onSelectHistory }) => {
-  const items = nodes.flatMap(n => {
-    const def = NODE_TYPES[n.type];
-    if (!def || n.runs === 0) return [];
-    return def.outputs.map(o => ({ nodeId: n.id, def, output: o }));
-  });
+const ArtifactsBrowser = ({ artifacts, onSelectHistory }) => {
+  const items = Object.entries(artifacts || {}).flatMap(([nodeId, result]) => (result.list || []).map(a => ({ nodeId, artifact: a })));
+  const download = (artifact) => {
+    if (!artifact?.url) return;
+    const a = document.createElement('a');
+    a.href = artifact.url;
+    a.download = artifact.name || 'artifact';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
   return (
     <div style={{ padding: 8 }}>
-      {items.map((it, i) => {
-        const c = COLOR_TOKENS[it.def.color];
-        const kindIcon = it.output.kind === 'image' ? <I.Image size={12} /> : it.output.kind === 'csv' ? <I.CSV size={12} /> : it.output.kind === 'folder' ? <I.Folder size={12} /> : <I.File size={12} />;
+      {items.length === 0 && <div style={{ padding: 12, fontSize: 11.5, color: 'var(--ink-4)', lineHeight: 1.5 }}>No artifacts yet. Upload a raw atlas, then run nodes to generate browser artifacts.</div>}
+      {items.map((it) => {
+        const kindIcon = it.artifact.kind === 'image' ? <I.Image size={12} /> : it.artifact.kind === 'csv' ? <I.CSV size={12} /> : it.artifact.kind === 'folder' ? <I.Folder size={12} /> : <I.File size={12} />;
         return (
           <button
-            key={i}
-            onClick={() => onSelectHistory(it.nodeId)}
+            key={`${it.nodeId}-${it.artifact.name}`}
+            onClick={() => { onSelectHistory(it.nodeId); download(it.artifact); }}
             style={{
               width: '100%', textAlign: 'left', background: 'transparent', border: 'none',
               padding: '7px 6px', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
-              display: 'flex', gap: 8, alignItems: 'center',
-              borderBottom: '1px solid var(--border)',
+              display: 'flex', gap: 8, alignItems: 'center', borderBottom: '1px solid var(--border)',
             }}
           >
-            <span style={{ width: 22, height: 22, borderRadius: 4, background: c.soft, color: c.ink, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              {kindIcon}
-            </span>
+            <span style={{ width: 22, height: 22, borderRadius: 4, background: 'var(--accent-soft)', color: 'var(--accent-ink)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{kindIcon}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.output.label}</div>
-              <div style={{ fontSize: 9.5, color: 'var(--ink-4)', fontFamily: 'Geist Mono, monospace' }}>{it.nodeId}</div>
+              <div style={{ fontSize: 11, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.artifact.name}</div>
+              <div style={{ fontSize: 9.5, color: 'var(--ink-4)', fontFamily: 'Geist Mono, monospace' }}>{it.nodeId} - {Math.max(1, Math.round((it.artifact.size || 0) / 1024))} KB</div>
             </div>
           </button>
         );
@@ -456,7 +486,7 @@ const TweaksHook = ({ tweaks, setTweak }) => {
   const { TweaksPanel, TweakSection, TweakRadio } = window;
   return (
     <TweaksPanel title="Tweaks">
-      <TweakSection title="Canvas">
+      <TweakSection label="Canvas">
         <TweakRadio
           label="Node density"
           value={tweaks.density}

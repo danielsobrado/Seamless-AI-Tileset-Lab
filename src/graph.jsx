@@ -32,7 +32,7 @@ function edgePath(a, b, kind = 'bezier') {
 }
 
 // --- Node card ---
-const NodeCard = ({ node, def, selected, density, onMouseDown, onClick, onPortDown, onPortUp, hoveredPort, runningPct }) => {
+const NodeCard = ({ node, def, selected, density, artifact, onMouseDown, onClick, onPortDown, onPortUp, hoveredPort, runningPct }) => {
   const color = COLOR_TOKENS[def.color] || COLOR_TOKENS.accent;
   const status = STATUS_DOT[node.status] || STATUS_DOT.idle;
   const warnings = (def.warnings ? def.warnings({ ...def.defaults, ...(node.params || {}) }) : []);
@@ -42,7 +42,7 @@ const NodeCard = ({ node, def, selected, density, onMouseDown, onClick, onPortDo
   const IconComp = I[def.icon] || I.Box;
 
   // Thumbnail by node type
-  const thumb = renderNodeThumb(node, def);
+  const thumb = renderNodeThumb(node, def, artifact);
 
   return (
     <div
@@ -242,41 +242,20 @@ if (!document.getElementById('graph-styles')) {
   document.head.appendChild(s);
 }
 
+function firstGraphImageArtifact(result) {
+  return result?.list?.find(a => a.kind === 'image') || Object.values(result?.artifacts || {}).find(a => a?.kind === 'image') || null;
+}
+
 // Node thumbnail dispatcher
-function renderNodeThumb(node, def) {
-  switch (node.type) {
-    case 'raw_input':
-      return <AtlasCanvas scheme="grass_dirty" cols={8} rows={8} tilePx={11} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'clean':
-      return <AtlasCanvas scheme="grass_clean" cols={8} rows={8} tilePx={11} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'classify':
-      return <AtlasCanvas scheme="classmap" cols={8} rows={8} tilePx={11} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'seam_report':
-      return <AtlasCanvas scheme="heatmap" cols={8} rows={8} tilePx={11} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'repair':
-      return <AtlasCanvas scheme="grass_clean" cols={8} rows={8} tilePx={11} seedBase={71} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'preview':
-      return <AtlasCanvas scheme="preview_grass" cols={20} rows={8} tilePx={11} seedBase={42} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'transitions':
-      return <AtlasCanvas scheme="transitions" cols={9} rows={3} tilePx={22} seedBase={node.params?.seed || 42} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'contact_sheet':
-      return <AtlasCanvas scheme="transitions" cols={9} rows={3} tilePx={22} seedBase={42} padding={1} bg="#1a1d22" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'extrude':
-      return <AtlasCanvas scheme="grass_clean" cols={8} rows={8} tilePx={10} padding={2} bg="#1a1d22" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />;
-    case 'dashboard':
-      return (
-        <div style={{ display: 'flex', height: '100%' }}>
-          <div style={{ flex: 1, borderRight: '1px solid #000' }}>
-            <AtlasCanvas scheme="transitions" cols={5} rows={3} tilePx={18} seedBase={42} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </div>
-          <div style={{ flex: 1 }}>
-            <AtlasCanvas scheme="transitions" cols={5} rows={3} tilePx={18} seedBase={91} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </div>
-        </div>
-      );
-    default:
-      return <div style={{ background: '#1a1d22', width: '100%', height: '100%' }} />;
+function renderNodeThumb(node, def, artifact) {
+  if (artifact?.url) {
+    return <img src={artifact.url} alt={artifact.name || def.title} style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated', display: 'block' }} />;
   }
+  return (
+    <div style={{ width: '100%', height: '100%', background: '#151922', color: 'rgba(255,255,255,.58)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10.5, fontFamily: 'Geist Mono, monospace', textAlign: 'center', padding: 12 }}>
+      no artifact yet
+    </div>
+  );
 }
 
 // --- Graph canvas ---
@@ -286,6 +265,7 @@ const GraphCanvas = ({
   onNodeMove, onAddEdge, onDeleteEdge,
   density, edgeStyle = 'bezier', showGrid = true,
   runningId, runningPct,
+  artifacts,
   onCanvasClick,
 }) => {
   const wrapRef = React.useRef(null);
@@ -470,7 +450,7 @@ const GraphCanvas = ({
           const def = NODE_TYPES[node.type];
           if (!def) return null;
           return (
-            <NodeWrapper key={node.id} node={node} def={def} nodeHeight={nodeHeight}>
+            <NodeWrapper key={node.id} node={node} def={def} nodeHeight={nodeHeight} onPortDown={onPortDown}>
               <NodeCard
                 node={node}
                 def={def}
@@ -481,6 +461,7 @@ const GraphCanvas = ({
                 onPortDown={onPortDown}
                 onPortUp={() => {}}
                 hoveredPort={hoveredPort}
+                artifact={firstGraphImageArtifact(artifacts?.[node.id])}
                 runningPct={runningId === node.id ? runningPct : 0}
               />
             </NodeWrapper>
@@ -509,7 +490,7 @@ const GraphCanvas = ({
 
 // Wrapper that adds data-port attributes onto the rendered ports for hit-testing.
 // We do this via a portal-like cloning ref pattern — simpler: re-render port hitboxes here.
-const NodeWrapper = ({ node, def, nodeHeight, children }) => {
+const NodeWrapper = ({ node, def, nodeHeight, onPortDown, children }) => {
   // We add invisible hit zones for each port to support edge-drop hit-testing.
   const inputs = def.inputs || [];
   const outputs = def.outputs || [];
@@ -537,6 +518,7 @@ const NodeWrapper = ({ node, def, nodeHeight, children }) => {
             <div
               key={p.id}
               data-port="1" data-node-id={node.id} data-port-id={p.id} data-side="out"
+              onMouseDown={(e) => onPortDown(e, node.id, p.id, 'out')}
               style={{
                 position: 'absolute', left: NODE_W - 12, top: pos.y - 10, width: 24, height: 20,
                 pointerEvents: 'auto', cursor: 'crosshair',
