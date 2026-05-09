@@ -1,4 +1,4 @@
-﻿# Seamless AI Tileset Lab
+# Seamless AI Tileset Lab
 
 Browser-only tileset pipeline for uploading an atlas, running canvas-based cleanup/classification/repair/export nodes, and downloading generated artifacts.
 
