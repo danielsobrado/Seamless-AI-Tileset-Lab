@@ -1,6 +1,6 @@
 # Seamless AI Tileset Lab
 
-Browser-only tileset pipeline for uploading an atlas, running canvas-based cleanup/classification/repair/export nodes, and downloading generated artifacts.
+Browser-only (https://danielsobrado.github.io/Seamless-AI-Tileset-Lab/) tileset pipeline for uploading an atlas, running canvas-based cleanup/classification/repair/export nodes, and downloading generated artifacts.
 
 ## Run locally
 
